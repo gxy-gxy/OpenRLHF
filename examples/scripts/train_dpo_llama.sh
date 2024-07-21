@@ -2,24 +2,27 @@ set -x
 
 read -r -d '' training_commands <<EOF
 ../train_dpo.py \
-     --save_path ./ckpt/7b_llama \
-     --save_steps -1 \
+     --save_path ./ckpt/qwen1.5_7b_test \
+     --save_steps 100 \
      --logging_steps 1 \
      --eval_steps -1 \
-     --train_batch_size 128 \
+     --train_batch_size 16 \
      --micro_train_batch_size 1 \
-     --pretrain OpenLLMAI/Llama-2-13b-sft-model-ocra-500k \
+     --pretrain /cpfs/2926428ee2463e44/user/guanxinyan/hf_models/Qwen1.5-7B \
      --bf16 \
      --max_epochs 1 \
      --max_len 2048 \
      --zero_stage 3 \
      --beta 0.1 \
      --learning_rate 5e-7 \
-     --dataset Anthropic/hh-rlhf,tasksource/oasst1_pairwise_rlhf_reward,lmsys/chatbot_arena_conversations,openai/webgpt_comparisons \
-     --dataset_probs 0.72,0.08,0.12,0.08 \
+     --dataset /data/nas/guanxinyan/OpenRLHF/data/ultrafeedback.json \
+     --dataset_probs 1 \
      --flash_attn \
      --gradient_checkpointing \
-     --ref_offload
+     --ref_offload \
+     --prompt_key prompt \
+     --chosen_key chosen \
+     --rejected_key rejected
 EOF
      # --wandb [WANDB_TOKENS] or True (use wandb login command)
      # --ipo [for IPO]

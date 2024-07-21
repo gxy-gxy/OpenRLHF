@@ -85,14 +85,14 @@ def blending_datasets(
                 strategy.print(f"load {dataset} with script {data_type}")
             else:
                 strategy.print(f"load {files} from {dataset}")
-            data = load_dataset(data_type, data_files=files)
+            data = load_dataset(data_type, data_files=files, token="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")
         elif len(dataset_subfold_list) == 2:
             dataset = dataset_subfold_list[0]
             subfold = dataset_subfold_list[1]
-            data = load_dataset(dataset, data_dir=subfold.strip())
+            data = load_dataset(dataset, data_dir=subfold.strip(), token="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")
         elif len(dataset_subfold_list) == 1:
             dataset = dataset_subfold_list[0]
-            data = load_dataset(dataset)
+            data = load_dataset(dataset, token="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")
         else:
             raise Exception(f"Dataset Name {dataset}: Format error")
 
