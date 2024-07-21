@@ -5,7 +5,7 @@ export HF_ENDPOINT="https://hf-mirror.com"
 export HF_DATASETS_CACHE=/data/nas/guanxinyan/.cache
 
 read -r -d '' training_commands <<EOF
-../train_value_model.py \
+openrlhf.cli.train_value_model \
      --save_path ${OUTPUT_DIR:-"/data/nas/guanxinyan/OpenRLHF/models/qwen2_7b_rm"} \
      --ckpt_path ${OUTPUT_DIR:-"/data/nas/guanxinyan/OpenRLHF/models/qwen2_7b_rm"} \
      --save_steps ${SAVE_STEPS:-1000} \

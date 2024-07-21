@@ -1,7 +1,7 @@
 set -x 
 
 read -r -d '' training_commands <<EOF
-../train_dpo.py \
+openrlhf.cli.train_dpo\
      --save_path ./ckpt/qwen1.5_7b_test \
      --save_steps 100 \
      --logging_steps 1 \
