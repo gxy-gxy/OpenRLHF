@@ -62,6 +62,8 @@ class CriticPPOTrainer(PPOTrainer):
 @ray.remote(num_gpus=1)
 class CriticModelRayActor(BasePPORole):
     def init_model_from_pretrained(self, strategy: DeepspeedStrategy, pretrain, max_steps):
+        args = strategy.args
+
         self._setup_distributed(strategy)
         critic = get_llm_for_sequence_regression(
             pretrain,
@@ -75,13 +77,17 @@ class CriticModelRayActor(BasePPORole):
             target_modules=strategy.args.target_modules,
             lora_dropout=strategy.args.lora_dropout,
             ds_config=strategy.get_ds_train_config(is_actor=False),
-            head_prefix=strategy.args.head_prefix,
+            value_head_prefix=strategy.args.value_head_prefix,
         )
         strategy.print(critic)
         strategy.print("reward normalization status: {}".format(strategy.args.normalize_reward))
         strategy.print("mean: {}, std {}".format(critic.mean, critic.std))
 
-        args = strategy.args
+        # configure tokenizer
+        if strategy.args.save_value_network:
+            self.tokenizer = get_tokenizer(
+                pretrain, critic, "left", strategy, use_fast=not strategy.args.disable_fast_tokenizer
+            )
 
         # configure optimizer
         critic_optim = strategy.create_optimizer(
@@ -90,10 +96,11 @@ class CriticModelRayActor(BasePPORole):
 
         # configure scheduler
         critic_scheduler = get_scheduler(
-            "cosine",
+            "cosine_with_min_lr",
             critic_optim,
             num_warmup_steps=math.ceil(max_steps * 0.03),
             num_training_steps=max_steps,
+            scheduler_specific_kwargs={"min_lr": args.critic_learning_rate * 0.1},
         )
 
         if args.gradient_checkpointing:
@@ -159,3 +166,13 @@ class CriticModelRayActor(BasePPORole):
 
     def empty_cache(self) -> None:
         torch.cuda.empty_cache()
+
+    def save_model(self):
+        args = self.strategy.args
+
+        # save model checkpoint after fitting on only rank0
+        self.strategy.save_model(
+            self.critic,
+            self.tokenizer,
+            args.save_path + "_critic",
+        )

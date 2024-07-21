@@ -73,7 +73,14 @@ class LLMRayActor:
             self.llm.llm_engine.model_executor.stop_remote_worker_execution_loop()
 
 
-def create_vllm_engines(num_engines: int, tensor_parallel_size: int, pretrain: str, seed: int):
+def create_vllm_engines(
+    num_engines: int,
+    tensor_parallel_size: int,
+    pretrain: str,
+    seed: int,
+    enable_prefix_caching: bool,
+    max_model_len: int,
+):
     vllm_engines = []
     for i in range(num_engines):
         # When tensor_parallel_size=1, vLLM init model in LLMEngine directly, assign 1 GPU for it.
@@ -100,6 +107,8 @@ def create_vllm_engines(num_engines: int, tensor_parallel_size: int, pretrain: s
                 tensor_parallel_size=tensor_parallel_size,
                 dtype="bfloat16",
                 seed=seed + i,
+                enable_prefix_caching=enable_prefix_caching,
+                max_model_len=max_model_len,
             )
         )
 

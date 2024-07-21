@@ -53,8 +53,9 @@ def generate(args):
             user_prompt = tokenizer.apply_chat_template(conversations, tokenize=False, add_generation_prompt=True)
         else:
             user_prompt = user_prompt + "\n" + args.input_template.format(inputs)
-            if args.enable_ca:
-                user_prompt += args.ca_prompt.strip() + " "
+
+        if args.enable_csft:
+            user_prompt += args.csft_prompt.strip() + " "
 
         user_prompt_len = len(user_prompt)
         input_ids = tokenizer.encode(user_prompt, return_tensors="pt").to(torch.cuda.current_device())
@@ -83,25 +84,29 @@ def generate(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--pretrain", type=str, default=None)
-    parser.add_argument("--max_len", type=int, default=4096)
-    parser.add_argument("--bf16", action="store_true", default=False)
-    parser.add_argument("--flash_attn", action="store_true", default=False)
+    parser.add_argument("--bf16", action="store_true", default=False, help="Enable bfloat16")
+    parser.add_argument("--flash_attn", action="store_true", default=False, help="Enable FlashAttention2")
     parser.add_argument("--disable_fast_tokenizer", action="store_true", default=False)
 
-    parser.add_argument("--greedy_sampling", action="store_true", default=False)
-    parser.add_argument("--top_p", type=float, default=0.9)
-    parser.add_argument("--temperature", type=float, default=0.2)
-    parser.add_argument("--repetition_penalty", type=float, default=1.2)
-    parser.add_argument("--input_template", type=str, default="Human: {}\nAssistant: ")
-    parser.add_argument("--apply_chat_template", action="store_true", default=False)
-
     # QLora
-    parser.add_argument("--load_in_4bit", action="store_true", default=False)
+    parser.add_argument("--load_in_4bit", action="store_true", default=False, help="Use QLoRA")
+
+    # Sampling
+    parser.add_argument("--pretrain", type=str, default=None, help="HF model name or path")
+    parser.add_argument("--max_len", type=int, default=4096)
+    parser.add_argument("--greedy_sampling", action="store_true", default=False)
+    parser.add_argument("--greedy_sampling", action="store_true", default=False, help="Use Greedy sampling")
+    parser.add_argument("--top_p", type=float, default=0.9, help="top_p for Sampling")
+    parser.add_argument("--temperature", type=float, default=0.2, help="temperature for Sampling")
+    parser.add_argument("--repetition_penalty", type=float, default=1.2)
+    parser.add_argument("--input_template", type=str, default="User: {}\nAssistant: ")
+    parser.add_argument(
+        "--apply_chat_template", action="store_true", default=False, help="Use HF tokenizer chat template"
+    )
 
     parser.add_argument("--ta_prompt", type=str, default=None)
-    parser.add_argument("--enable_ca", action="store_true", default=False)
-    parser.add_argument("--ca_prompt", type=str, default="<rm_score>: 5.00", help="conditional SFT prompt")
+    parser.add_argument("--enable_csft", action="store_true", default=False)
+    parser.add_argument("--csft_prompt", type=str, default="<rm_score>: 5.00", help="conditional SFT prompt")
     args = parser.parse_args()
 
     print(args)

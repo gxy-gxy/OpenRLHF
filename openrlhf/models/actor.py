@@ -9,6 +9,7 @@ from peft.tuners.lora import LoraLayer
 from transformers import AutoModelForCausalLM, BitsAndBytesConfig, PreTrainedModel
 from transformers.deepspeed import HfDeepSpeedConfig
 
+from .packing_utils import patch_for_block_diag_attn
 from .utils import log_probs_from_logits
 
 
@@ -34,6 +35,7 @@ class Actor(nn.Module):
         target_modules=None,
         ds_config=None,
         device_map=None,
+        packing_samples=False,
         **kwargs,
     ) -> None:
         super().__init__()
@@ -99,6 +101,15 @@ class Actor(nn.Module):
                 print("[MoE] set output_router_logits as True")
                 self.model.config.output_router_logits = True
 
+            # https://github.com/huggingface/transformers/issues/26877
+            # Use `model.generate(use_cache=True)` instead.`
+            self.model.config.use_cache = False
+
+            # packing samples using Flash Attention 2
+            if packing_samples:
+                assert use_flash_attention_2, "Only support `--packing_samples` with Flash Attention 2."
+                model_type = getattr(self.model.config, "model_type", None)
+                patch_for_block_diag_attn(model_type)
         else:
             self.model = pretrain_or_model
 
@@ -119,7 +130,7 @@ class Actor(nn.Module):
             "attention_mask": kwargs.get("attention_mask"),
             "eos_token_id": kwargs.get("eos_token_id"),
             "pad_token_id": kwargs.get("pad_token_id"),
-            "min_new_tokens": kwargs.get("min_new_tokens ", 1),
+            "min_new_tokens": kwargs.get("min_new_tokens", 1),
         }
 
         if kwargs.get("max_new_tokens", None):
@@ -150,17 +161,18 @@ class Actor(nn.Module):
         #             break
         #
         eos_indices = seq_length - attention_mask.long().fliplr().argmax(dim=1, keepdim=True).clamp(min=1)
-        first_token_indices = attention_mask.long().argmax(dim=1, keepdim=True)
-
-        # For Llama3 and Qwen2 models, there are some eos_tokens in the middle of the prompt.
-        mask = torch.arange(seq_length).unsqueeze(0).expand(sequences.size(0), -1).to(device=sequences.device)
-        mask = (mask <= eos_indices) & (mask >= first_token_indices)
-
-        attention_mask.masked_fill_(mask, 1)
         sequences.scatter_(dim=1, index=eos_indices, value=eos_token_id)
 
+        # For Llama3 and Qwen2 models, there are some eos_tokens in the middle of the prompt.
+        first_token_indices = attention_mask.long().argmax(dim=1, keepdim=True)
+        mask = torch.arange(seq_length).unsqueeze(0).expand(sequences.size(0), -1).to(device=sequences.device)
+        attention_mask = (mask >= first_token_indices) & (mask <= eos_indices).to(dtype=torch.long)
+
         # in RL, state_i (current token) + action_i (next token) -> state_i+1 (next token)
-        action_mask = attention_mask[:, input_len - 1 : -1]
+        state_seq = sequences[:, input_len - 1 : -1]
+        action_mask = state_seq.ne(eos_token_id) & state_seq.ne(pad_token_id)
+        action_mask[:, 0] = 1
+
         return sequences, attention_mask, action_mask
 
     def forward(
@@ -169,11 +181,16 @@ class Actor(nn.Module):
         num_actions: int = None,
         attention_mask: Optional[torch.Tensor] = None,
         return_output=False,
+        packing_samples=False,
     ) -> torch.Tensor:
         """Returns action log probs"""
-        # https://github.com/OpenLLMAI/OpenRLHF/issues/217
-        position_ids = attention_mask.long().cumsum(-1) - 1
-        position_ids.masked_fill_(attention_mask == 0, 1)
+        if not packing_samples:
+            # https://github.com/OpenRLHF/OpenRLHF/issues/217
+            position_ids = attention_mask.long().cumsum(-1) - 1
+            position_ids.masked_fill_(attention_mask == 0, 1)
+        else:
+            position_ids = None
+
         output = self.model(sequences, attention_mask=attention_mask, position_ids=position_ids)
         log_probs = log_probs_from_logits(output["logits"][:, :-1, :], sequences[:, 1:])
 

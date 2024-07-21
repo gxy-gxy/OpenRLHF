@@ -284,6 +284,11 @@ class DeepspeedStrategy(ABC):
 
             state_dict_keys = set(state_dict.keys())
             output_state_dict_keys = set(output_state_dict.keys())
+
+            # corner case for tie_word_embeddings, such as Qwen2-0.5B
+            if getattr(model_to_save.config, "tie_word_embeddings", False):
+                state_dict_keys.remove("lm_head.weight")
+
             assert state_dict_keys.issubset(
                 output_state_dict_keys
             ), f"mismatch keys {output_state_dict_keys.symmetric_difference(state_dict_keys)}"
@@ -362,6 +367,7 @@ class DeepspeedStrategy(ABC):
         return dist.get_rank()
 
     def save_ckpt(self, model, save_dir, tag=None, max_num=3, max_mem=1000, client_state={}, save_latest=True):
+        assert isinstance(model, deepspeed.DeepSpeedEngine)
         if self.is_rank_0():
             # Check and create the directory
             if not os.path.exists(save_dir):
@@ -396,7 +402,7 @@ class DeepspeedStrategy(ABC):
                 else:
                     break
 
-        assert isinstance(model, deepspeed.DeepSpeedEngine)
+        dist.barrier()
         model.save_checkpoint(save_dir, tag=tag, client_state=client_state, save_latest=save_latest)
 
     def load_ckpt(

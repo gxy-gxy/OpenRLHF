@@ -24,11 +24,13 @@ read -r -d '' training_commands <<EOF
      --chosen_key chosen \
      --rejected_key rejected
 EOF
-     # --wandb [WANDB_TOKENS] or True (use wandb login command)
-     # --ipo [for IPO]
-     # --label_smoothing 0.1 [for cDPO]
+    # --wandb [WANDB_TOKENS] or True (use wandb login command)
+    # --ipo [for IPO]
+    # --label_smoothing 0.1 [for cDPO]
+    # --ref_offload 
+    # --packing_samples
 
 
 if [[ ${1} != "slurm" ]]; then
-    deepspeed $training_commands
+    deepspeed --module $training_commands
 fi

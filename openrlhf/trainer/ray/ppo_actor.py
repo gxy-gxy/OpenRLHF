@@ -78,7 +78,7 @@ class ActorPPOTrainer(PPOTrainer):
             world_size = vllm_num_engines * vllm_tensor_parallel_size + 1
 
             backend = getattr(self.strategy.args, "vllm_sync_backend", "nccl")
-            # https://github.com/OpenLLMAI/OpenRLHF/issues/313
+            # https://github.com/OpenRLHF/OpenRLHF/issues/313
             import vllm
 
             if vllm.__version__ > "0.4.2":
@@ -108,7 +108,7 @@ class ActorPPOTrainer(PPOTrainer):
 
         torch.distributed.barrier()
 
-    def ppo_train(self):
+    def ppo_train(self, global_steps):
         # 1. ensure all experience makers done
         self.experience_maker.flush()
         torch.distributed.barrier()
@@ -118,12 +118,15 @@ class ActorPPOTrainer(PPOTrainer):
             critic_status_ref = self.critic.fit.remote()
 
         # 3. actor model training
-        status = super().ppo_train()
+        if global_steps > self.freezing_actor_steps:
+            status = super().ppo_train(global_steps)
 
-        # 4. broadcast weights to vllm engines
-        if self.vllm_engines is not None:
-            torch.distributed.barrier()
-            self._broadcast_to_vllm()
+            # 4. broadcast weights to vllm engines
+            if self.vllm_engines is not None:
+                torch.distributed.barrier()
+                self._broadcast_to_vllm()
+        else:
+            status = {}
 
         # 5. wait remote critic model training done
         if self.critic_train_remote:
@@ -132,7 +135,7 @@ class ActorPPOTrainer(PPOTrainer):
 
         return status
 
-    def training_step(self, experience: Experience) -> Dict[str, float]:
+    def training_step(self, experience: Experience, global_steps) -> Dict[str, float]:
         return self.training_step_actor(experience)
 
     def _broadcast_to_vllm(self):
@@ -209,10 +212,11 @@ class ActorModelRayActor(BasePPORole):
         self.max_steps = max_steps
 
         actor_scheduler = get_scheduler(
-            "cosine",
+            "cosine_with_min_lr",
             actor_optim,
             num_warmup_steps=math.ceil(max_steps * 0.03),
             num_training_steps=max_steps,
+            scheduler_specific_kwargs={"min_lr": args.actor_learning_rate * 0.1},
         )
 
         if args.gradient_checkpointing:
@@ -244,6 +248,7 @@ class ActorModelRayActor(BasePPORole):
             args.seed,
             max_count=args.max_samples,
             return_eval=False,
+            train_split=args.prompt_split,
         )
         prompts_data = prompts_data.select(range(min(args.max_samples, len(prompts_data))))
         prompts_dataset = PromptDataset(prompts_data, self.tokenizer, strategy, input_template=args.input_template)
@@ -256,6 +261,7 @@ class ActorModelRayActor(BasePPORole):
                 strategy,
                 args.seed,
                 return_eval=False,
+                train_split=args.pretrain_split,
             )
             pretrain_max_len = args.max_len if args.max_len else args.prompt_max_len + args.generate_max_len
             pretrain_dataset = SFTDataset(

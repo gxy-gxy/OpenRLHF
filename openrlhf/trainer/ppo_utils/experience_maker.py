@@ -349,6 +349,7 @@ class RemoteExperienceMaker(NaiveExperienceMaker):
             top_k=kwargs.get("top_k", -1),
             max_tokens=kwargs.get("max_new_tokens", 1024),
             min_tokens=kwargs.get("min_new_tokens", 1),
+            skip_special_tokens=kwargs.get("skip_special_tokens", False),
         )
 
         # TODO: can't pass `max_length` to vLLM's tokenizer for input truncation, remove this once it is supported.
@@ -376,11 +377,11 @@ class RemoteExperienceMaker(NaiveExperienceMaker):
         for output in outputs:
             # left padding input
             input_len = len(output.prompt_token_ids)
-            input_ids = [pad_token_id] * (max_input_len - input_len) + output.prompt_token_ids
+            input_ids = [pad_token_id] * (max_input_len - input_len) + list(output.prompt_token_ids)
 
             # right padding output
             output_len = len(output.outputs[0].token_ids)
-            output_ids = output.outputs[0].token_ids + [pad_token_id] * (max_output_len - output_len)
+            output_ids = list(output.outputs[0].token_ids) + [pad_token_id] * (max_output_len - output_len)
 
             if output_ids[output_len - 1] != eos_token_id:
                 output_ids[min(output_len, len(output_ids) - 1)] = eos_token_id
